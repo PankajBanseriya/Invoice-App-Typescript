@@ -73,6 +73,7 @@ const InvoiceForm: React.FC = () => {
   const state = location.state as LocationState;
   const activeInvoice = state?.activeInvoice || null;
   const isEdit = !!activeInvoice;
+  const [taxType, setTaxType] = useState<"PCT" | "AMT">("PCT");
 
   const { addInvoice, updateInvoice, invoices } = useInvoices(null, null);
   const { items } = useItems();
@@ -163,17 +164,23 @@ const InvoiceForm: React.FC = () => {
     return lineItems.reduce((sum, row) => sum + (row.amount || 0), 0);
   }, [lineItems]);
 
-  // // Handle Tax changes
-  useEffect(() => {
-    const pct = parseFloat(taxPct.toString()) || 0;
-    setTaxAmt(Number((subTotal * (pct / 100)).toFixed(2)));
-  }, [taxPct, subTotal]);
+  const handleTaxPctChange = (value: string) => {
+    const pct = parseFloat(value) || 0;
+    setTaxType("PCT");
+    setTaxPct(pct);
+
+    const amt = subTotal * (pct / 100);
+    setTaxAmt(Number(amt.toFixed(2)));
+  };
 
   const handleTaxAmtChange = (value: string) => {
-    setTaxAmt(Number(value));
     const amt = parseFloat(value) || 0;
+    setTaxType("AMT");
+    setTaxAmt(amt);
+
     if (subTotal > 0) {
-      setTaxPct(Number(((amt / subTotal) * 100).toFixed(2)));
+      const pct = (amt / subTotal) * 100;
+      setTaxPct(parseFloat(pct.toFixed(2)));
     }
   };
 
@@ -240,30 +247,29 @@ const InvoiceForm: React.FC = () => {
       isValid = false;
     }
 
-    
     lineItems.forEach((line) => {
       let lErr: any = {};
       if (!line.itemObject) lErr.item = "Item is Required";
 
       const qtyErr = getNumericError(line.qty, "Quantity");
       if (qtyErr) lErr.qty = qtyErr;
-      
+
       const rateErr = getNumericError(line.rate, "Rate");
       if (rateErr) lErr.rate = rateErr;
-      
+
       const d = parseFloat(line.discountPct.toString()) || 0;
       if (d < 0 || d > 100) lErr.disc = "0-100";
 
       // Item Amount Validation
       const itemAmtErr = getNumericError(line.amount, "Amount");
       if (itemAmtErr) lErr.itemAmt = itemAmtErr;
-      
+
       if (Object.keys(lErr).length > 0) {
         newErrors.lines[line.id] = lErr;
         isValid = false;
       }
     });
-    
+
     const hasValidQty = lineItems.some(
       (l) => (parseFloat(l.qty.toString()) || 0) > 0,
     );
@@ -299,22 +305,22 @@ const InvoiceForm: React.FC = () => {
     ]);
 
   const invoiceTotals = useMemo(() => {
-    const subTotal = lineItems.reduce((sum, row) => sum + (row.amount || 0), 0);
-    const calculatedTaxAmt = subTotal * (taxPct / 100);
+    const subTotalVal = lineItems.reduce(
+      (sum, row) => sum + (row.amount || 0),
+      0,
+    );
 
-    // Side effect check to prevent infinite loop
-    if (Math.abs(calculatedTaxAmt - taxAmt) > 0.01) {
-      setTimeout(() => setTaxAmt(calculatedTaxAmt), 0);
-    }
+    const finalTaxAmt =
+      taxType === "PCT" ? subTotalVal * (taxPct / 100) : taxAmt;
 
-    const finalAmount = subTotal + calculatedTaxAmt;
+    const finalAmount = subTotalVal + finalTaxAmt;
 
     return {
-      subTotal: subTotal.toFixed(2),
-      taxAmt: calculatedTaxAmt.toFixed(2),
+      subTotal: subTotalVal.toFixed(2),
+      taxAmt: finalTaxAmt.toFixed(2),
       invoiceAmount: finalAmount.toFixed(2),
     };
-  }, [lineItems, taxPct, taxAmt]);
+  }, [lineItems, taxPct, taxAmt, taxType]);
 
   const handleSubmit = async () => {
     if (!validate()) return;
@@ -669,9 +675,7 @@ const InvoiceForm: React.FC = () => {
                     <TextField
                       size="small"
                       value={taxPct}
-                      onChange={(e) =>
-                        setTaxPct(parseFloat(e.target.value) || 0)
-                      }
+                      onChange={(e) => handleTaxPctChange(e.target.value)}
                       sx={{ width: "100px" }}
                       error={!!errors.taxPct}
                       helperText={errors.taxPct}
@@ -684,8 +688,9 @@ const InvoiceForm: React.FC = () => {
                     />
                     <TextField
                       size="small"
-                      value={taxAmt.toFixed(2)}
+                      value={taxAmt}
                       sx={{ width: "100px" }}
+                      type="number"
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">$</InputAdornment>
