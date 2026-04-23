@@ -42,7 +42,11 @@ export default function Login() {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   };
 
-  const isFormInvalid: boolean = !validateEmail(formData.email);
+  const validatePassword = (password: string): boolean => {
+    return password.length > 0
+  }
+
+  const isFormInvalid: boolean = !validateEmail(formData.email) || !validatePassword(formData.password);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value, checked, type } = e.target;
