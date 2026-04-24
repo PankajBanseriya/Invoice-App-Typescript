@@ -404,6 +404,19 @@ const Invoices = () => {
                       cornerRadius: 3,
                     },
                   ]}
+                  slotProps={{
+                    legend: {
+                      sx: {
+                        maxWidth: 120,
+                        overflow: "hidden",
+                        "& .MuiChartsLegend-label": {
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        },
+                      },
+                    },
+                  }}
                 />
               ) : (
                 <Typography variant="caption" color="textDisabled">
