@@ -73,7 +73,7 @@ const InvoiceForm: React.FC = () => {
   const state = location.state as LocationState;
   const activeInvoice = state?.activeInvoice || null;
   const isEdit = !!activeInvoice;
-  const [taxType, setTaxType] = useState<"PCT" | "AMT">("PCT");
+  const [taxType, setTaxType] = useState<"PCT" | "AMT">("AMT");
 
   const { addInvoice, updateInvoice, invoices } = useInvoices(null, null);
   const { items } = useItems();
@@ -131,6 +131,8 @@ const InvoiceForm: React.FC = () => {
           });
 
           setTaxPct(data.taxPercentage || 0);
+          setTaxAmt(data.taxAmount || 0);
+          setTaxType("AMT");
 
           if (data.lines && data.lines.length > 0) {
             const mappedRows: LineItem[] = data.lines.map((line: any) => {
@@ -180,7 +182,7 @@ const InvoiceForm: React.FC = () => {
 
     if (subTotal > 0) {
       const pct = (amt / subTotal) * 100;
-      setTaxPct(parseFloat(pct.toFixed(2)));
+      setTaxPct(parseFloat(pct.toFixed(4)));
     }
   };
 
