@@ -1,8 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import useSWR, { mutate as globalMutate } from "swr";
 import api from "../api/axios";
 import toast from "react-hot-toast";
 import { AxiosError } from "axios";
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 
 // --- Interfaces ---
 
@@ -42,126 +43,156 @@ interface QueryParams {
   topN?: number;
 }
 
+// --- Helpers ---
+
+const fetcher = (url: string, params?: QueryParams) =>
+  api.get(url, { params }).then((res) => res.data);
+
+const getErrorMessage = (err: unknown, fallback: string): string => {
+  const axiosErr = err as AxiosError<string>;
+  return axiosErr?.response?.data || fallback;
+};
+
+// Keys that need to be busted after delete — kept in one place for easy maintenance
+const invalidateAllInvoiceKeys = async (
+  fromDate: string | null,
+  toDate: string | null
+) => {
+  await Promise.all([
+    globalMutate(["invoices", fromDate, toDate]),
+    globalMutate(["invoiceMetrics", fromDate, toDate]),
+    globalMutate(["topItems", fromDate, toDate]),
+    globalMutate(["invoiceChart"]),
+  ]);
+};
+
+// --- Main Hook ---
+
 export const useInvoices = (fromDate: string | null, toDate: string | null) => {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  // Fetch Invoices
-  const invoicesQuery = useQuery<Invoice[]>({
-    queryKey: ["invoices", fromDate, toDate],
-    queryFn: async () => {
-      const params: QueryParams = { fromDate };
-      if (toDate) params.toDate = toDate;
+  const [isAdding, setIsAdding] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-      const response = await api.get("/Invoice/GetList", { params });
-      return response.data;
-    },
-  });
+  // Build shared params objects (toDate only included when present, matching original)
+  const dateParams: QueryParams = fromDate
+    ? { fromDate, ...(toDate ? { toDate } : {}) }
+    : { fromDate: null };
 
-  // Fetch Invoice Metrics
-  const invoiceMetrics = useQuery<InvoiceMetrics>({
-    queryKey: ["invoiceMetrics", fromDate, toDate],
-    queryFn: async () => {
-      const params: QueryParams = { fromDate };
-      if (toDate) params.toDate = toDate;
+  // ─── Fetch Invoices ───────────────────────────────────────────────────────
+  const { data: invoicesData, isLoading } = useSWR<Invoice[]>(
+    ["invoices", fromDate, toDate],
+    () => fetcher("/Invoice/GetList", dateParams)
+  );
 
-      const response = await api.get("/Invoice/GetMetrices", { params });
+  // ─── Fetch Invoice Metrics ────────────────────────────────────────────────
+  const { data: invoiceMetricsData, isLoading: isLoadingMetrics } =
+    useSWR<InvoiceMetrics>(
+      ["invoiceMetrics", fromDate, toDate],
+      async () => {
+        const response = await api.get("/Invoice/GetMetrices", {
+          params: dateParams,
+        });
+        const data = Array.isArray(response.data)
+          ? response.data[0]
+          : response.data;
+        return data || { invoiceCount: 0, totalAmount: 0 };
+      }
+    );
 
-      const data = Array.isArray(response.data)
-        ? response.data[0]
-        : response.data;
-      return data || { invoiceCount: 0, totalAmount: 0 };
-    },
-  });
+  // ─── Fetch Top 5 Items ────────────────────────────────────────────────────
+  const { data: topItemsData, isLoading: isLoadingTopItems } = useSWR<
+    TopItem[]
+  >(
+    ["topItems", fromDate, toDate],
+    () => fetcher("/Invoice/TopItems", { ...dateParams, topN: 5 })
+  );
 
-  // Fetch top 5 items
-  const topItemsQuery = useQuery<TopItem[]>({
-    queryKey: ["topItems", fromDate, toDate],
-    queryFn: async () => {
-      const params: QueryParams = { fromDate, topN: 5 };
-      if (toDate) params.toDate = toDate;
+  // ─── Add Invoice ──────────────────────────────────────────────────────────
+  const addInvoice = (newInvoice: Partial<Invoice>) => {
+    (async () => {
+      setIsAdding(true);
+      try {
+        await api.post("/Invoice", newInvoice);
+        await globalMutate(["invoices", fromDate, toDate]);
+        toast.success("Invoice Created Successfully.");
+        navigate("/invoices");
+      } catch (err) {
+        toast.error(getErrorMessage(err, "Failed to create invoice."));
+      } finally {
+        setIsAdding(false);
+      }
+    })();
+  };
 
-      const response = await api.get("/Invoice/TopItems", { params });
-      return response.data;
-    },
-  });
+  // ─── Update Invoice ───────────────────────────────────────────────────────
+  const updateInvoice = (updatedInvoice: Invoice) => {
+    (async () => {
+      setIsUpdating(true);
+      try {
+        await api.put("/Invoice", updatedInvoice);
+        await globalMutate(["invoices", fromDate, toDate]);
+        toast.success("Invoice updated successfully!");
+        navigate("/invoices");
+      } catch (err) {
+        toast.error(getErrorMessage(err, "Failed to update invoice."));
+      } finally {
+        setIsUpdating(false);
+      }
+    })();
+  };
 
-  // Add Invoice
-  const addMutation = useMutation({
-    mutationFn: (newInvoice: Partial<Invoice>) =>
-      api.post("/Invoice", newInvoice),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      toast.success("Invoice Created Successfully.");
-      navigate("/invoices");
-    },
-    onError: (err: AxiosError<string>) => {
-      toast.error(err.response?.data || "Failed to create invoice.");
-    },
-  });
+  // ─── Delete Invoice ───────────────────────────────────────────────────────
+  const deleteInvoice = (id: number) => {
+    (async () => {
+      setIsDeleting(true);
+      try {
+        await api.delete(`/Invoice/${id}`);
+        // Invalidate all related keys — same as the 4 invalidateQueries calls in original
+        await invalidateAllInvoiceKeys(fromDate, toDate);
+        toast.success("Invoice deleted successfully!");
+      } catch (err) {
+        toast.error(getErrorMessage(err, "Failed to delete invoice."));
+      } finally {
+        setIsDeleting(false);
+      }
+    })();
+  };
 
-  // Update Invoice
-  const updateMutation = useMutation({
-    mutationFn: (updatedInvoice: Invoice) =>
-      api.put("/Invoice", updatedInvoice),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      toast.success("Invoice updated successfully!");
-      navigate("/invoices");
-    },
-    onError: (err: AxiosError<string>) => {
-      toast.error(err.response?.data || "Failed to update invoice.");
-    },
-  });
-
-  // Delete Invoice
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.delete(`/Invoice/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["invoiceMetrics"] });
-      queryClient.invalidateQueries({ queryKey: ["topItems"] });
-      queryClient.invalidateQueries({ queryKey: ["invoiceChart"] });
-      toast.success("Invoice deleted successfully!");
-    },
-    onError: (err: AxiosError<string>) => {
-      toast.error(err.response?.data || "Failed to delete invoice.");
-    },
-  });
-
+  // ─── Return — all names match your original hook exactly ─────────────────
   return {
-    invoices: invoicesQuery.data || [],
-    isLoading: invoicesQuery.isLoading,
+    invoices: invoicesData || [],
+    isLoading,
 
-    invoiceMetrics: invoiceMetrics.data,
-    isLoadingMetrics: invoiceMetrics.isLoading,
+    invoiceMetrics: invoiceMetricsData,
+    isLoadingMetrics,
 
-    topItems: topItemsQuery.data || [],
-    isLoadingTopItems: topItemsQuery.isLoading,
+    topItems: topItemsData || [],
+    isLoadingTopItems,
 
-    addInvoice: addMutation.mutate,
-    isAdding: addMutation.isPending,
+    addInvoice,
+    isAdding,
 
-    updateInvoice: updateMutation.mutate,
-    isUpdating: updateMutation.isPending,
+    updateInvoice,
+    isUpdating,
 
-    deleteInvoice: deleteMutation.mutate,
-    isDeleting: deleteMutation.isPending,
+    deleteInvoice,
+    isDeleting,
   };
 };
 
-// Line Chart
-export const useInvoiceChart = () => {
-  const invoiceChart = useQuery<InvoiceTrend[]>({
-    queryKey: ["invoiceChart"],
-    queryFn: async () => {
-      const response = await api.get("/Invoice/GetTrend12m");
-      return response.data;
-    },
-  });
+// --- Line Chart Hook ---
 
+export const useInvoiceChart = () => {
+  const { data, isLoading } = useSWR<InvoiceTrend[]>(
+    ["invoiceChart"],
+    () => fetcher("/Invoice/GetTrend12m")
+  );
+
+  // Return names match your original hook exactly
   return {
-    data: invoiceChart.data || [],
-    isLoading: invoiceChart.isLoading,
+    data: data || [],
+    isLoading,
   };
 };

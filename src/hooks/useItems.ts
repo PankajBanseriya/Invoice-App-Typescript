@@ -1,8 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import useSWR, { mutate as globalMutate } from "swr";
 import api from "../api/axios";
 import toast from "react-hot-toast";
 import { imageCache } from "../components/item/ItemsImage";
 import { AxiosError } from "axios";
+import { useState } from "react";
 
 export interface Item {
   itemID: number;
@@ -19,93 +20,115 @@ interface UpdatePictureArgs {
   file: File;
 }
 
-export const useItems = () => {
-  const queryClient = useQueryClient();
+const fetcher = (url: string) => api.get(url).then((res) => res.data);
 
-  // Fetch All Items
-  const itemsQuery = useQuery<Item[]>({
-    queryKey: ["items"],
-    queryFn: async () => {
-      const response = await api.get("/Item/GetList");
-      return response.data;
-    },
-  });
+const getErrorMessage = (err: unknown, fallback: string): string => {
+  const axiosErr = err as AxiosError<string>;
+  return axiosErr?.response?.data || fallback;
+};
+
+export const useItems = () => {
+  const [isAdding, setIsAdding] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isUpdatingPicture, setIsUpdatingPicture] = useState(false);
+
+  // Fetch all items
+  const {
+    data,
+    isLoading,
+    error: swrError,
+  } = useSWR<Item[]>("/Item/GetList", fetcher);
 
   // Add Item
-  const addMutation = useMutation({
-    mutationFn: async (newItem: Partial<Item>) => {
+  const addItem = async (newItem: Partial<Item>) => {
+    setIsAdding(true);
+    try {
       const response = await api.post("/Item", newItem);
+      await globalMutate("/Item/GetList");
       return response;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] });
-    },
-    onError: (err: AxiosError<string>) => {
-      const errorMessage = err.response?.data || "Failed to add item.";
-      toast.error(errorMessage);
-    },
-  });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to add item."));
+      throw err;
+    } finally {
+      setIsAdding(false);
+    }
+  };
 
-  // Edit Item
-  const editMutation = useMutation({
-    mutationFn: (updatedItem: Item) => api.put(`/Item`, updatedItem),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] });
-    },
-    onError: (err: AxiosError<string>) => {
-      toast.error(err.response?.data || "Update failed.");
-    },
-  });
+  const addItemSync = (newItem: Partial<Item>) => {
+    addItem(newItem).catch(() => {});
+  };
+
+  // Update Item
+  const updateItem = async (updatedItem: Item) => {
+    setIsUpdating(true);
+    try {
+      const response = await api.put("/Item", updatedItem);
+      await globalMutate("/Item/GetList");
+      return response;
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Update failed."));
+      throw err;
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   // Delete Item
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.delete(`/Item/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] });
-      toast.success("Item deleted!");
-    },
-    onError: (err: AxiosError<string>) =>
-      toast.error(err.response?.data || "Could not delete item."),
-  });
+  const deleteItem = (id: number) => {
+    (async () => {
+      setIsDeleting(true);
+      try {
+        await api.delete(`/Item/${id}`);
+        await globalMutate("/Item/GetList");
+        toast.success("Item deleted!");
+      } catch (err) {
+        toast.error(getErrorMessage(err, "Could not delete item."));
+      } finally {
+        setIsDeleting(false);
+      }
+    })();
+  };
 
   // Update Item Picture
-  const updatePictureMutation = useMutation({
-    mutationFn: async ({ itemID, file }: UpdatePictureArgs) => {
+  const updatePictureAsync = async ({ itemID, file }: UpdatePictureArgs) => {
+    setIsUpdatingPicture(true);
+    try {
       const imageData = new FormData();
       imageData.append("ItemID", itemID.toString());
       imageData.append("File", file);
-      return api.post("/Item/UpdateItemPicture", imageData);
-    },
-    onSuccess: (_data, variables) => {
-      if (variables.itemID) {
-        delete imageCache[variables.itemID.toString()];
+      const response = await api.post("/Item/UpdateItemPicture", imageData);
+
+      if (itemID) {
+        delete imageCache[itemID.toString()];
       }
-      queryClient.invalidateQueries({ queryKey: ["items"] });
-      queryClient.invalidateQueries({
-        queryKey: ["itemPicture", variables.itemID],
-      });
-    },
-    onError: (err: AxiosError<string>) => {
-      const errorMessage = err.response?.data || "Image upload failed.";
-      toast.error(errorMessage);
-    },
-  });
+      await globalMutate("/Item/GetList");
+      await globalMutate(["itemPicture", itemID]);
+      return response;
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Image upload failed."));
+      throw err;
+    } finally {
+      setIsUpdatingPicture(false);
+    }
+  };
 
   return {
-    items: itemsQuery.data || [],
-    isLoading: itemsQuery.isLoading,
-    isError: itemsQuery.isError,
+    items: data || [],
+    isLoading,
+    isError: !!swrError,
 
-    addItem: addMutation.mutate,
-    isAdding: addMutation.isPending,
-    addItemAsync: addMutation.mutateAsync,
+    addItem: addItemSync,       
+    isAdding,
+    addItemAsync: addItem,
 
-    updateItem: editMutation.mutateAsync,
-    isUpdating: editMutation.isPending,
+    updateItem,
+    isUpdating,
 
-    deleteItem: deleteMutation.mutate,
-    isDeleting: deleteMutation.isPending,
+    deleteItem,
+    isDeleting,
 
-    updatePictureAsync: updatePictureMutation.mutateAsync,
+    updatePictureAsync,
+    isUpdatingPicture,
   };
 };

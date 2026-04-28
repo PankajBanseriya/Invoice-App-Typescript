@@ -1,53 +1,54 @@
-import { useState } from "react";
+import useSWRMutation from "swr/mutation";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import toast from "react-hot-toast";
 
+async function sendRequest(url: string, { arg }: { arg: any }) {
+  return api.post(url, arg).then((res) => res.data);
+}
+
 export const useAuth = () => {
   const navigate = useNavigate();
-  
-  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
-  const [isSigningUp, setIsSigningUp] = useState<boolean>(false);
+
+  // Login Mutation
+  const { trigger: loginTrigger, isMutating: isLoggingIn } = useSWRMutation(
+    "/Auth/Login",
+    sendRequest
+  );
+
+  // Signup Mutation
+  const { trigger: signupTrigger, isMutating: isSigningUp } = useSWRMutation(
+    "/Auth/Signup",
+    sendRequest
+  );
 
   const login = async (data: any) => {
-    setIsLoggingIn(true);
     try {
-      const res = await api.post("/Auth/Login", data);
-      
-      localStorage.setItem("token", res.data.token);
-      localStorage.setItem("user", JSON.stringify(res.data.user));
-
-      toast.success("Login Successful!");
-      navigate("/invoices");
+      const result = await loginTrigger(data);
+      if (result) {
+        localStorage.setItem("token", result.token);
+        localStorage.setItem("user", JSON.stringify(result.user));
+        toast.success("Login Successful!");
+        navigate("/invoices");
+      }
     } catch (err: any) {
-      console.log(err);
       toast.error("Invalid email or password");
-    } finally {
-      setIsLoggingIn(false);
     }
   };
 
   const signup = async (data: any) => {
-    setIsSigningUp(true);
     try {
-      const res = await api.post("/Auth/Signup", data);
-      
-      localStorage.setItem("token", res.data.token);
-      localStorage.setItem("user", JSON.stringify(res.data.user));
-
-      toast.success("Signup Successful!");
-      navigate("/invoices");
+      const result = await signupTrigger(data);
+      if (result) {
+        localStorage.setItem("token", result.token);
+        localStorage.setItem("user", JSON.stringify(result.user));
+        toast.success("Signup Successful!");
+        navigate("/invoices");
+      }
     } catch (err: any) {
-      console.log(err);
-      toast.error(err.response?.data || "Signup failed");
-    } finally {
-      setIsSigningUp(false);
+      toast.error("Signup failed");
     }
   };
 
   return { login, signup, isLoggingIn, isSigningUp };
 };
-
-
-
-
