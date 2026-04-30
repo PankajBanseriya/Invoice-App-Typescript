@@ -6,7 +6,6 @@ import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 
 // --- Interfaces ---
-
 export interface Invoice {
   primaryKeyID: number;
   invoiceID: number;
@@ -43,8 +42,6 @@ interface QueryParams {
   topN?: number;
 }
 
-// --- Helpers ---
-
 const fetcher = (url: string, params?: QueryParams) =>
   api.get(url, { params }).then((res) => res.data);
 
@@ -53,7 +50,6 @@ const getErrorMessage = (err: unknown, fallback: string): string => {
   return axiosErr?.response?.data || fallback;
 };
 
-// Keys that need to be busted after delete — kept in one place for easy maintenance
 const invalidateAllInvoiceKeys = async (
   fromDate: string | null,
   toDate: string | null
@@ -66,8 +62,6 @@ const invalidateAllInvoiceKeys = async (
   ]);
 };
 
-// --- Main Hook ---
-
 export const useInvoices = (fromDate: string | null, toDate: string | null) => {
   const navigate = useNavigate();
 
@@ -75,18 +69,17 @@ export const useInvoices = (fromDate: string | null, toDate: string | null) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Build shared params objects (toDate only included when present, matching original)
   const dateParams: QueryParams = fromDate
     ? { fromDate, ...(toDate ? { toDate } : {}) }
     : { fromDate: null };
 
-  // ─── Fetch Invoices ───────────────────────────────────────────────────────
+  // Fetch Invoices
   const { data: invoicesData, isLoading } = useSWR<Invoice[]>(
     ["invoices", fromDate, toDate],
     () => fetcher("/Invoice/GetList", dateParams)
   );
 
-  // ─── Fetch Invoice Metrics ────────────────────────────────────────────────
+  // Fetch Invoice Metrics
   const { data: invoiceMetricsData, isLoading: isLoadingMetrics } =
     useSWR<InvoiceMetrics>(
       ["invoiceMetrics", fromDate, toDate],
@@ -101,7 +94,7 @@ export const useInvoices = (fromDate: string | null, toDate: string | null) => {
       }
     );
 
-  // ─── Fetch Top 5 Items ────────────────────────────────────────────────────
+  // Fetch Top 5 Items
   const { data: topItemsData, isLoading: isLoadingTopItems } = useSWR<
     TopItem[]
   >(
@@ -109,7 +102,7 @@ export const useInvoices = (fromDate: string | null, toDate: string | null) => {
     () => fetcher("/Invoice/TopItems", { ...dateParams, topN: 5 })
   );
 
-  // ─── Add Invoice ──────────────────────────────────────────────────────────
+  // Add Invoice
   const addInvoice = (newInvoice: Partial<Invoice>) => {
     (async () => {
       setIsAdding(true);
@@ -126,7 +119,7 @@ export const useInvoices = (fromDate: string | null, toDate: string | null) => {
     })();
   };
 
-  // ─── Update Invoice ───────────────────────────────────────────────────────
+  // Update Invoice
   const updateInvoice = (updatedInvoice: Invoice) => {
     (async () => {
       setIsUpdating(true);
@@ -143,13 +136,12 @@ export const useInvoices = (fromDate: string | null, toDate: string | null) => {
     })();
   };
 
-  // ─── Delete Invoice ───────────────────────────────────────────────────────
+  // Delete Invoice
   const deleteInvoice = (id: number) => {
     (async () => {
       setIsDeleting(true);
       try {
         await api.delete(`/Invoice/${id}`);
-        // Invalidate all related keys — same as the 4 invalidateQueries calls in original
         await invalidateAllInvoiceKeys(fromDate, toDate);
         toast.success("Invoice deleted successfully!");
       } catch (err) {
@@ -160,7 +152,6 @@ export const useInvoices = (fromDate: string | null, toDate: string | null) => {
     })();
   };
 
-  // ─── Return — all names match your original hook exactly ─────────────────
   return {
     invoices: invoicesData || [],
     isLoading,
@@ -182,15 +173,13 @@ export const useInvoices = (fromDate: string | null, toDate: string | null) => {
   };
 };
 
-// --- Line Chart Hook ---
-
+// Line Chart
 export const useInvoiceChart = () => {
   const { data, isLoading } = useSWR<InvoiceTrend[]>(
     ["invoiceChart"],
     () => fetcher("/Invoice/GetTrend12m")
   );
 
-  // Return names match your original hook exactly
   return {
     data: data || [],
     isLoading,
