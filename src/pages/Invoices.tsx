@@ -12,11 +12,8 @@ import {
   Paper,
   IconButton,
 } from "@mui/material";
-import {useGridApiRef, GridPreferencePanelsValue} from "@mui/x-data-grid"
-import type {  
-  GridColDef,  
-  GridRenderCellParams 
-} from "@mui/x-data-grid-pro";
+import { useGridApiRef, GridPreferencePanelsValue } from "@mui/x-data-grid";
+import type { GridColDef, GridRenderCellParams } from "@mui/x-data-grid-pro";
 
 import { LineChart } from "@mui/x-charts/LineChart";
 import { format, subDays } from "date-fns";
@@ -28,6 +25,7 @@ import { PieChart } from "@mui/x-charts/PieChart";
 import { DataGrid } from "@mui/x-data-grid";
 import { printInvoice } from "../utils/printInvoice";
 import ConfirmDeleteModal from "../components/common/ConfirmDeleteModal";
+import DateRangeDialog from "../components/invoices/DateRangeDialog";
 import toast from "react-hot-toast";
 
 // --- Interfaces ---
@@ -53,10 +51,17 @@ const Invoices = () => {
   const navigate = useNavigate();
   const [search, setSearch] = useState<string>("");
   const [activeFilter, setActiveFilter] = useState<string>("Month");
-  const [customDates, _] = useState<CustomDates>({ from: null, to: null });
+  const [customDates, setCustomDates] = useState<CustomDates>({
+    from: null,
+    to: null,
+  });
   const [deleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(
+    null,
+  );
   const apiRef = useGridApiRef();
+
+  const [dateDialogOpen, setDateDialogOpen] = useState(false);
 
   const dateParams = useMemo(() => {
     const today = new Date();
@@ -94,7 +99,7 @@ const Invoices = () => {
     topItems,
     isLoadingTopItems,
   } = useInvoices(dateParams.from, dateParams.to);
-  
+
   const { data } = useInvoiceChart();
 
   const chartData = data.map((item: any) => {
@@ -168,7 +173,8 @@ const Invoices = () => {
       width: 150,
       minWidth: 150,
       type: "number",
-      valueFormatter: (value?: number) => value ? `$${value.toLocaleString()}` : "$0",
+      valueFormatter: (value?: number) =>
+        value ? `$${value.toLocaleString()}` : "$0",
     },
     {
       field: "taxPercentage",
@@ -257,6 +263,19 @@ const Invoices = () => {
     );
   });
 
+  const handleInvoiceRange = (label: string) => {
+    if (label === "Custom") {
+      setDateDialogOpen(true);
+    } else {
+      setActiveFilter(label);
+    }
+  };
+
+  const handleCustomDateApply = (dates: CustomDates) => {
+    setCustomDates(dates);
+    setActiveFilter("Custom");
+  };
+
   return (
     <Box sx={{ width: "95%", mx: "auto" }}>
       <Stack
@@ -270,14 +289,19 @@ const Invoices = () => {
         <Typography variant="h5" component="h2" fontWeight="500">
           Invoices
         </Typography>
-        <Stack direction="row" flexWrap={"wrap"} justifyContent={"center"} gap={1}>
+        <Stack
+          direction="row"
+          flexWrap={"wrap"}
+          justifyContent={"center"}
+          gap={1}
+        >
           {["Today", "Week", "Month", "Year", "Custom"].map((label) => {
             const isActive = activeFilter === label;
             return (
               <Button
                 key={label}
                 variant="contained"
-                onClick={() => setActiveFilter(label)}
+                onClick={() => handleInvoiceRange(label)}
                 sx={{
                   bgcolor: isActive ? "#1a1a1a" : "#f1f3f5",
                   color: isActive ? "#ffffff" : "#495057",
@@ -353,7 +377,8 @@ const Invoices = () => {
                   {
                     data: chartData.map((item: any) => item.amount),
                     label: "Revenue",
-                    valueFormatter: (value: number | null) => `₹ ${value?.toFixed(2)}`,
+                    valueFormatter: (value: number | null) =>
+                      `₹ ${value?.toFixed(2)}`,
                   },
                 ]}
                 xAxis={[
@@ -385,7 +410,7 @@ const Invoices = () => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                mt: -0.4
+                mt: -0.4,
               }}
             >
               {isLoadingTopItems ? (
@@ -439,7 +464,9 @@ const Invoices = () => {
           size="small"
           placeholder="Search Invoice No, Customer..."
           value={search}
-          onChange={(e: ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+          onChange={(e: ChangeEvent<HTMLInputElement>) =>
+            setSearch(e.target.value)
+          }
           sx={{ width: 350, bgcolor: "white" }}
           startAdornment={
             <InputAdornment position="start">
@@ -524,7 +551,9 @@ const Invoices = () => {
               minWidth: "50Px",
             }}
             size="medium"
-            onClick={() => apiRef.current?.showPreferences(GridPreferencePanelsValue.columns)}
+            onClick={() =>
+              apiRef.current?.showPreferences(GridPreferencePanelsValue.columns)
+            }
           >
             <FaColumns fontSize={20} />
           </Button>
@@ -551,6 +580,12 @@ const Invoices = () => {
           }}
         />
       </Paper>
+
+      <DateRangeDialog
+        open={dateDialogOpen}
+        onClose={() => setDateDialogOpen(false)}
+        onApply={handleCustomDateApply}
+      />
 
       <ConfirmDeleteModal
         open={deleteModalOpen}
