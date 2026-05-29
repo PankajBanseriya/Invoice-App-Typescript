@@ -1,30 +1,29 @@
 import { useState } from "react";
-import type { FormEvent, ChangeEvent } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import {
   Box,
-  Button,
-  TextField,
   Typography,
   Paper,
   Grid,
-  LinearProgress,
-  Avatar,
   Container,
   Divider,
-  InputLabel,
+  Avatar,
+  Button,
+  LinearProgress,
+  Link,
   InputAdornment,
   IconButton,
-  Link,
-  Backdrop,
-  CircularProgress
 } from "@mui/material";
-import { CloudUpload } from "@mui/icons-material";
-import { Visibility, VisibilityOff } from "@mui/icons-material";
+import { CloudUpload, Visibility, VisibilityOff } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
 import toast from "react-hot-toast";
+import { useAuth } from "../hooks/useAuth";
+import AppButton from "../components/common/AppButton";
+import AppTextField from "../components/common/AppTextField";
+import LoadingBackdrop from "../components/common/LoadingBackdrop";
 
-// --- Types ---
+import { validateSignup, type SignupErrors } from "../utils/validators/signupValidator";
+
 interface SignupFormData {
   FirstName: string;
   LastName: string;
@@ -38,9 +37,14 @@ interface SignupFormData {
   CurrencySymbol: string;
 }
 
-type FormErrors = Partial<Record<keyof SignupFormData, string>>;
-
 export default function Signup() {
+  const navigate = useNavigate();
+  const { signup, isSigningUp } = useAuth();
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [errors, setErrors] = useState<SignupErrors>({});
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
   const [formData, setFormData] = useState<SignupFormData>({
     FirstName: "",
     LastName: "",
@@ -54,35 +58,31 @@ export default function Signup() {
     CurrencySymbol: "",
   });
 
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  
-  const navigate = useNavigate();
-  const { signup, isSigningUp } = useAuth();
-
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name as keyof SignupFormData]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }));
-    }
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+    setErrors((prev) => ({
+      ...prev,
+      [name]: "",
+    }));
   };
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const allowedTypes = ["image/jpeg", "image/png"];
     const maxSize = 5 * 1024 * 1024;
 
     if (!allowedTypes.includes(file.type)) {
-      toast.error("Only JPG/PNG allowed.");
+      toast.error("Only JPG/PNG allowed");
       return;
     }
+
     if (file.size > maxSize) {
-      toast.error("File size must be less then 5MB.");
+      toast.error("File size must be less than 5MB");
       return;
     }
 
@@ -90,176 +90,115 @@ export default function Signup() {
     setLogoPreview(URL.createObjectURL(file));
   };
 
-  const getStrength = (): number => {
-    const { Password } = formData;
-    if (!Password) return 0;
-    let s = 0;
-
-    if (Password.length >= 8) s += 25;
-    if (/[A-Z]/.test(Password)) s += 25;
-    if (/[0-9]/.test(Password)) s += 25;
-    if (/[!@#$%^&*(),.?":{}|<>]/.test(Password)) s += 25;
-
-    return s;
-  };
-
-  const validate = (): boolean => {
-    let newErrors: FormErrors = {};
-    const EmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const PasswordRegex =
-      /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])[A-Za-z\d!@#$%^&*(),.?":{}|<>]{8,20}$/;
-
-    if (!formData.FirstName.trim())
-      newErrors.FirstName = "Please enter your first name.";
-    if (!formData.LastName.trim())
-      newErrors.LastName = "Please enter your last name.";
-
-    if (!formData.Email) {
-      newErrors.Email = "Email is required.";
-    } else if (!EmailRegex.test(formData.Email)) {
-      newErrors.Email = "Enter a valid Email Address.";
-    }
-
-    if (!formData.Password) {
-      newErrors.Password = "Password is required.";
-    } else if (!PasswordRegex.test(formData.Password)) {
-      newErrors.Password = "Password must contain at least eight characters, with one uppercase letter (A-Z), one number (0-9), and one special character (e.g., ! @ # $).";
-    }
-
-    if (!formData.CompanyName)
-      newErrors.CompanyName = "Please enter your company name.";
-    if (!formData.Address.trim())
-      newErrors.Address = "Please enter company Address.";
-    if (!formData.City) newErrors.City = "Please enter City.";
-
-    if (!/^\d{6}$/.test(formData.ZipCode)) {
-      newErrors.ZipCode = "Zip must be exactly 6 digits.";
-    }
-
-    if (!formData.CurrencySymbol) {
-      newErrors.CurrencySymbol = "Enter a valid currency symbol.";
-    } else if (formData.CurrencySymbol.length > 5) {
-      newErrors.CurrencySymbol = "Max 5 characters allowed.";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const getStrength = () => {
+    const password = formData.Password;
+    let strength = 0;
+    if (password.length >= 8) strength += 25;
+    if (/[A-Z]/.test(password)) strength += 25;
+    if (/[0-9]/.test(password)) strength += 25;
+    if (/[!@#$%^&*]/.test(password)) strength += 25;
+    return strength;
   };
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (validate()) {
-      const data = new FormData();
 
-      data.append("FirstName", formData.FirstName);
-      data.append("LastName", formData.LastName);
-      data.append("Email", formData.Email);
-      data.append("Password", formData.Password);
-      data.append("CompanyName", formData.CompanyName);
-      data.append("Address", formData.Address);
-      data.append("City", formData.City);
-      data.append("ZipCode", formData.ZipCode);
-      data.append("Industry", formData.Industry);
-      data.append("CurrencySymbol", formData.CurrencySymbol);
+    const validationErrors = validateSignup(formData);
 
-      if (logoFile) {
-        data.append("logo", logoFile);
-      }
+    setErrors(validationErrors);
 
-      signup(data);
+    if (Object.keys(validationErrors).length > 0) {
+      return;
     }
 
+    const data = new FormData();
+
+    Object.entries(formData).forEach(([key, value]) => {
+      data.append(key, value);
+    });
+
+    if (logoFile) {
+      data.append("logo", logoFile);
+    }
+
+    signup(data);
   };
 
   return (
     <>
-      <Container maxWidth="md" sx={{ mb: 5 }}>
-        <Box textAlign="center" mb={4} mt={4}>
-          <Typography
-            variant="h4"
-            fontWeight="400"
-            letterSpacing={1.5}
-            fontSize="30px"
-            mb={1}
-          >
+      <Container maxWidth="md" sx={{ py: 5 }}>
+        <Box textAlign="center" mb={4}>
+          <Typography variant="h4" fontWeight="400" fontSize="30px" mb={1}>
             Create Your Account
           </Typography>
-          <Typography color="textSecondary">
+
+          <Typography color="text.secondary">
             Set up your company and start invoicing in minutes.
           </Typography>
         </Box>
 
-        <Paper variant="outlined" sx={{ p: 4, borderRadius: 2 }}>
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 4,
+            borderRadius: 2,
+          }}
+        >
           <form onSubmit={handleSubmit}>
             <Grid container spacing={4}>
-              {/* User Information */}
+              {/* Left Section */}
               <Grid size={{ xs: 12, md: 6 }}>
-                <Typography variant="subtitle1" fontWeight="500" fontSize={18}>
+                <Typography variant="h6" fontWeight={500}>
                   User Information
                 </Typography>
-                <Divider sx={{ my: 1 }} />
 
-                <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }} htmlFor="FirstName">
-                  First Name*
-                </InputLabel>
-                <TextField
-                  fullWidth
+                <Divider sx={{ my: 2 }} />
+
+                <AppTextField
+                  label="First Name*"
                   name="FirstName"
-                  id="FirstName"
                   value={formData.FirstName}
                   onChange={handleChange}
-                  placeholder="Enter first name"
-                  margin="dense"
-                  size="small"
                   error={!!errors.FirstName}
                   helperText={errors.FirstName}
                   inputProps={{ maxLength: 50 }}
+                  placeholder="Enter first name"
+                  sx={{ mb: 2 }}
                 />
 
-                <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
-                  Last Name*
-                </InputLabel>
-                <TextField
-                  fullWidth
+                <AppTextField
+                  label="Last Name*"
                   name="LastName"
                   value={formData.LastName}
                   onChange={handleChange}
-                  placeholder="Enter last name"
-                  margin="dense"
-                  size="small"
                   error={!!errors.LastName}
                   helperText={errors.LastName}
                   inputProps={{ maxLength: 50 }}
+                  placeholder="Enter last name"
+                  sx={{ mb: 2 }}
                 />
 
-                <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
-                  Email*
-                </InputLabel>
-                <TextField
-                  fullWidth
+                <AppTextField
+                  label="Email*"
                   name="Email"
                   value={formData.Email}
                   onChange={handleChange}
-                  placeholder="Enter your Email"
-                  margin="dense"
-                  size="small"
                   error={!!errors.Email}
                   helperText={errors.Email}
+                  placeholder="Enter your email"
+                  sx={{ mb: 2 }}
                 />
 
-                <InputLabel sx={{ mt: 2, mb: 1, fontSize: "0.9rem" }}>
-                  Password*
-                </InputLabel>
-
-                <TextField
-                  fullWidth
+                <AppTextField
+                  label="Password*"
                   name="Password"
-                  inputProps={{ maxLength: 20 }}
                   type={showPassword ? "text" : "password"}
-                  placeholder="Enter password"
-                  size="small"
                   value={formData.Password}
                   onChange={handleChange}
+                  error={!!errors.Password}
+                  helperText={errors.Password}
+                  inputProps={{ maxLength: 20 }}
+                  placeholder="Enter password"
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
@@ -272,12 +211,9 @@ export default function Signup() {
                       </InputAdornment>
                     ),
                   }}
-                  error={!!errors.Password}
-                  helperText={errors.Password}
-                  sx={{ mb: 2 }}
                 />
 
-                <Box sx={{ mt: 1 }}>
+                <Box mt={2}>
                   <LinearProgress
                     variant="determinate"
                     value={getStrength()}
@@ -287,6 +223,7 @@ export default function Signup() {
                     }}
                     color="inherit"
                   />
+
                   <Typography variant="caption">
                     Password Strength:{" "}
                     {getStrength() <= 25
@@ -295,181 +232,144 @@ export default function Signup() {
                         ? "Weak"
                         : getStrength() <= 75
                           ? "Good"
-                          : "Very Strong"}
+                          : "Strong"}
                   </Typography>
                 </Box>
               </Grid>
 
-              {/* Company Information */}
+              {/* Right Section */}
               <Grid size={{ xs: 12, md: 6 }}>
-                <Typography variant="subtitle1" fontWeight="500" fontSize={18}>
+                <Typography variant="h6" fontWeight={500}>
                   Company Information
                 </Typography>
-                <Divider sx={{ my: 1 }} />
 
-                <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
-                  Company Name*
-                </InputLabel>
-                <TextField
-                  fullWidth
+                <Divider sx={{ my: 2 }} />
+
+                <AppTextField
+                  label="Company Name*"
                   name="CompanyName"
                   value={formData.CompanyName}
                   onChange={handleChange}
-                  placeholder="Enter company name"
-                  margin="dense"
-                  size="small"
                   error={!!errors.CompanyName}
                   helperText={errors.CompanyName}
                   inputProps={{ maxLength: 100 }}
+                  placeholder="Enter company name"
+                  sx={{ mb: 2 }}
                 />
 
-                <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
+                <Typography fontSize="0.9rem" mb={1}>
                   Company Logo
-                </InputLabel>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 2, my: 1 }}>
+                </Typography>
+
+                <Box display="flex" alignItems="center" gap={2} mb={2}>
                   <Avatar
+                    src={logoPreview || ""}
                     variant="rounded"
-                    src={logoPreview ?? ""}
-                    sx={{ width: 60, height: 60 }}
+                    sx={{
+                      width: 60,
+                      height: 60,
+                    }}
                   >
                     <CloudUpload />
                   </Avatar>
+
                   <Button
-                    variant="outlined"
                     component="label"
-                    size="small"
+                    variant="outlined"
                     color="inherit"
-                    sx={{ flexGrow: 1, height: 45 }}
+                    fullWidth
                   >
-                    <Box
-                      width="100%"
-                      textAlign="start"
-                      textTransform="none"
-                      px={1}
-                    >
-                      {logoPreview ? "Change Logo" : "No File Chosen"}
-                    </Box>
+                    {logoPreview ? "Change Logo" : "No file chosen"}
+
                     <input
                       hidden
-                      accept="image/png, image/jpeg"
                       type="file"
+                      accept="image/png,image/jpeg"
                       onChange={handleFile}
                     />
                   </Button>
                 </Box>
 
-                <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
-                  Address*
-                </InputLabel>
-                <TextField
-                  fullWidth
+                <AppTextField
+                  label="Address*"
                   name="Address"
                   value={formData.Address}
                   onChange={handleChange}
-                  placeholder="Enter company address"
-                  margin="dense"
-                  size="small"
-                  multiline
-                  rows={3}
                   error={!!errors.Address}
                   helperText={errors.Address}
                   inputProps={{ maxLength: 500 }}
+                  placeholder="Enter company address"
+                  multiline
+                  rows={3}
+                  sx={{ mb: 2 }}
                 />
 
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 12, md: 6 }}>
-                    <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
-                      City*
-                    </InputLabel>
-                    <TextField
-                      fullWidth
+                    <AppTextField
+                      label="City*"
                       name="City"
                       value={formData.City}
                       onChange={handleChange}
-                      placeholder="Enter City"
-                      margin="dense"
-                      size="small"
                       error={!!errors.City}
                       helperText={errors.City}
                       inputProps={{ maxLength: 50 }}
+                      placeholder="Enter city"
                     />
                   </Grid>
+
                   <Grid size={{ xs: 12, md: 6 }}>
-                    <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
-                      Zip Code*
-                    </InputLabel>
-                    <TextField
-                      fullWidth
+                    <AppTextField
+                      label="Zip Code*"
                       name="ZipCode"
+                      placeholder="6 digit zip code"
+                      type="number"
+                      inputProps={{ maxLength: 6 }}
                       value={formData.ZipCode}
                       onChange={handleChange}
-                      placeholder="6 digits"
-                      margin="dense"
-                      size="small"
                       error={!!errors.ZipCode}
                       helperText={errors.ZipCode}
-                      inputProps={{ maxLength: 6 }}
                     />
                   </Grid>
                 </Grid>
 
-                <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
-                  Industry
-                </InputLabel>
-                <TextField
-                  fullWidth
-                  name="Industry"
-                  value={formData.Industry}
-                  onChange={handleChange}
-                  placeholder="Industry Type"
-                  margin="dense"
-                  size="small"
-                  inputProps={{ maxLength: 50 }}
-                />
+                <Box mt={2}>
+                  <AppTextField
+                    label="Industry"
+                    name="Industry"
+                    value={formData.Industry}
+                    inputProps={{ maxLength: 50 }}
+                    placeholder="Industry type"
+                    onChange={handleChange}
+                    sx={{ mb: 2 }}
+                  />
 
-                <InputLabel sx={{ mt: 2, fontSize: "0.9rem" }}>
-                  Currency Symbol*
-                </InputLabel>
-                <TextField
-                  fullWidth
-                  name="CurrencySymbol"
-                  value={formData.CurrencySymbol}
-                  onChange={handleChange}
-                  placeholder="$, €, AED"
-                  margin="dense"
-                  size="small"
-                  error={!!errors.CurrencySymbol}
-                  helperText={errors.CurrencySymbol}
-                  inputProps={{ maxLength: 5 }}
-                />
+                  <AppTextField
+                    label="Currency Symbol*"
+                    name="CurrencySymbol"
+                    value={formData.CurrencySymbol}
+                    onChange={handleChange}
+                    error={!!errors.CurrencySymbol}
+                    helperText={errors.CurrencySymbol}
+                    inputProps={{ maxLength: 5 }}
+                    placeholder="$, ₹, €, AED"
+                  />
+                </Box>
               </Grid>
             </Grid>
 
-            <Box sx={{ textAlign: "end", mt: 4 }}>
-              <Button
-                type="submit"
-                variant="contained"
-                sx={{
-                  px: 4,
-                  py: 1.25,
-                  textTransform: "none",
-                  bgcolor: "text.primary",
-                }}
-              >
-                Sign Up
-              </Button>
+            <Box textAlign="right" mt={4}>
+              <AppButton type="submit">Sign Up</AppButton>
             </Box>
+
             <Box textAlign="center" mt={4}>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" color="text.secondary">
                 Already have an account?{" "}
                 <Link
-                  sx={{
-                    cursor: "pointer",
-                    "&:hover": { textDecoration: "underline" },
-                    textDecoration: "none",
-                    fontWeight: "550",
-                  }}
-                  color="textSecondary"
+                  component="button"
+                  underline="hover"
+                  color="inherit"
+                  fontWeight={600}
                   onClick={() => navigate("/")}
                 >
                   Login
@@ -480,15 +380,7 @@ export default function Signup() {
         </Paper>
       </Container>
 
-      <Backdrop
-        sx={{ color: "#fff", zIndex: (theme) => theme.zIndex.drawer + 1 }}
-        open={isSigningUp}
-      >
-        <Box textAlign="center">
-          <CircularProgress color="inherit" />
-          <Typography sx={{ mt: 2 }}>Processing your request...</Typography>
-        </Box>
-      </Backdrop>
+      <LoadingBackdrop open={isSigningUp} text="Creating your account..." />
     </>
   );
 }

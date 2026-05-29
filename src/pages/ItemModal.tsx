@@ -6,41 +6,31 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  TextField,
-  Box,
   IconButton,
-  Avatar,
-  Typography,
-  Grid,
-  InputAdornment,
   CircularProgress,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import CloudUploadIcon from "@mui/icons-material/CloudUpload";
-import { imageCache } from "../components/item/ItemsImage";
+import toast from "react-hot-toast";
+import api from "../api/axios";
 import { useItems } from "../hooks/useItems";
 import type { Item } from "../hooks/useItems";
-import api from "../api/axios";
-import toast from "react-hot-toast";
+import { imageCache } from "../components/item/ItemsImage";
+import ItemImageUpload from "../components/item/ItemImageUpload";
+import ItemFormFields from "../components/item/ItemFormFields";
+import { validateItem, type ItemErrors } from "../utils/validators/itemValidator";
+import AppButton from "../components/common/AppButton";
 
-// --- Types ---
 interface ItemModalProps {
   open: boolean;
   handleClose: () => void;
   activeItem: Item | null;
 }
 
-interface FormData {
+export interface FormData {
   itemName: string;
   description: string;
   salesRate: string | number;
   discountPct: string | number;
-}
-
-interface FormErrors {
-  itemName?: string;
-  salesRate?: string;
-  discountPct?: string;
 }
 
 const ItemModal: React.FC<ItemModalProps> = ({
@@ -51,50 +41,55 @@ const ItemModal: React.FC<ItemModalProps> = ({
   const [formData, setFormData] = useState<FormData>({
     itemName: "",
     description: "",
-    salesRate: 0,
-    discountPct: 0,
+    salesRate: "",
+    discountPct: "",
   });
-
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [errors, setErrors] = useState<FormErrors>({});
+  const [errors, setErrors] = useState<ItemErrors>({});
   const [isSaving, setIsSaving] = useState<boolean>(false);
-
   const { addItemAsync, updateItem, updatePictureAsync } = useItems();
 
   const fetchExistingImage = async (id: number) => {
     try {
       const idStr = id.toString();
+
       if (imageCache[idStr]) {
         setLogoPreview(imageCache[idStr]);
+
         return;
       }
+
       const response = await api.get(`/Item/Picture/${id}`);
+
       if (response.data && typeof response.data === "string") {
         const cleanUrl = response.data.replace(/^"|"$/g, "");
+
         setLogoPreview(cleanUrl);
       } else {
         setLogoPreview(null);
       }
     } catch (error) {
       console.error("Error fetching existing image", error);
+
       setLogoPreview(null);
     }
   };
 
   useEffect(() => {
-    setLogoPreview(null);
-    setLogoFile(null);
     setErrors({});
+    setLogoFile(null);
+    setLogoPreview(null);
     setIsSaving(false);
 
     if (activeItem) {
       setFormData({
         itemName: activeItem.itemName || "",
         description: activeItem.description || "",
-        salesRate: activeItem.salesRate || 0,
-        discountPct: activeItem.discountPct || 0,
+        salesRate: activeItem.salesRate || "",
+        discountPct: activeItem.discountPct || "",
       });
+
       fetchExistingImage(activeItem.itemID);
     } else {
       setFormData({
@@ -110,47 +105,16 @@ const ItemModal: React.FC<ItemModalProps> = ({
     e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
 
-  const validate = (): boolean => {
-    let tempErrors: FormErrors = {};
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
 
-    // Item Name Validation
-    if (!formData.itemName.trim())
-      tempErrors.itemName = "Item Name is required.";
-    if (formData.itemName.length > 50)
-      tempErrors.itemName = "Max 50 characters allowed.";
-
-    // Sales Rate Validation
-    const rateStr = formData.salesRate.toString();
-    const rateValue = parseFloat(rateStr);
-
-    // Regex Explanation:
-    // ^\d{1,10} -> Start with 1 to 10 digits
-    // (\.\d{1,2})?$ -> Optional dot followed by 1 to 2 digits at the end
-    const salesRateRegex = /^\d{1,10}(\.\d{1,2})?$/;
-
-    if (!rateStr.trim() || rateStr === "") {
-      tempErrors.salesRate = "Sale Rate is required.";
-    } else if (rateValue < 0) {
-      tempErrors.salesRate = "Sale Rate cannot be negative.";
-    } else if (!salesRateRegex.test(rateStr)) {
-      tempErrors.salesRate =
-        "Max 10 digits and 2 decimal places allowed (e.g. 9999999999.99).";
-    }
-
-    // Discount Validation
-    const disc =
-      typeof formData.discountPct === "string"
-        ? parseFloat(formData.discountPct)
-        : formData.discountPct;
-    if (disc < 0 || disc > 100) {
-      tempErrors.discountPct = "Discount must be between 0 and 100%.";
-    }
-
-    setErrors(tempErrors);
-    return Object.keys(tempErrors).length === 0;
+    setErrors((prev) => ({
+      ...prev,
+      [name]: "",
+    }));
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -160,22 +124,33 @@ const ItemModal: React.FC<ItemModalProps> = ({
     const allowedTypes = ["image/jpeg", "image/png"];
     const maxSize = 5 * 1024 * 1024;
 
-    if (!allowedTypes.includes(file.type))
-      return toast.error("Only PNG/JPG allowed.");
-    if (file.size > maxSize) return toast.error("Max size is 5MB.");
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Only PNG/JPG allowed.");
+      return;
+    }
+
+    if (file.size > maxSize) {
+      toast.error("Max size is 5MB.");
+      return;
+    }
 
     setLogoFile(file);
     setLogoPreview(URL.createObjectURL(file));
   };
 
   const handleSubmit = async () => {
-    if (!validate()) return;
+    const validationErrors = validateItem(formData);
+    setErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) {
+      return;
+    }
+
     setIsSaving(true);
 
     const payload: Partial<Item> = {
       itemName: formData.itemName,
       description: formData.description,
-      salesRate: parseFloat(formData.salesRate.toString() || "0"),
+      salesRate: parseFloat(formData.salesRate.toString()),
       discountPct: parseFloat(formData.discountPct.toString() || "0"),
     };
 
@@ -191,18 +166,25 @@ const ItemModal: React.FC<ItemModalProps> = ({
         payload.itemID = activeItem.itemID;
         payload.updatedOn = activeItem.updatedOn;
         await updateItem(payload as Item);
+
         toast.success("Item updated successfully!");
       } else {
         const response = await addItemAsync(payload);
         const newItemId = response.data.primaryKeyID;
+
         if (logoFile && newItemId) {
-          await updatePictureAsync({ itemID: newItemId, file: logoFile });
+          await updatePictureAsync({
+            itemID: newItemId,
+            file: logoFile,
+          });
         }
+
         toast.success("Item added successfully!");
       }
+
       handleClose();
-    } catch (err) {
-      console.error("Save failed", err);
+    } catch (error) {
+      console.error("Save failed", error);
     } finally {
       setIsSaving(false);
     }
@@ -226,153 +208,36 @@ const ItemModal: React.FC<ItemModalProps> = ({
         }}
       >
         {activeItem ? "Edit Item" : "New Item"}
+
         <IconButton onClick={handleClose} size="small">
           <CloseIcon />
         </IconButton>
       </DialogTitle>
 
       <DialogContent dividers>
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="body2" gutterBottom color="text.secondary">
-            Item Picture
-          </Typography>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <Avatar
-              variant="rounded"
-              src={logoPreview ?? ""}
-              sx={{ width: 80, height: 80 }}
-            >
-              <CloudUploadIcon />
-            </Avatar>
-            <Box>
-              <Button
-                variant="outlined"
-                component="label"
-                size="small"
-                sx={{
-                  textTransform: "none",
-                  color: "black",
-                  borderColor: "#ccc",
-                }}
-              >
-                {logoPreview ? "Change File" : "Choose File"}
-                <input
-                  type="file"
-                  hidden
-                  accept="image/*"
-                  onChange={handleFileChange}
-                />
-              </Button>
-              <Typography
-                variant="caption"
-                display="block"
-                color="text.secondary"
-                sx={{ mt: 0.5 }}
-              >
-                PNG or JPG, max 5MB
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
+        <ItemImageUpload preview={logoPreview} onChange={handleFileChange} />
 
-        <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 500 }}>
-          Item Name*
-        </Typography>
-        <TextField
-          fullWidth
-          name="itemName"
-          value={formData.itemName}
-          onChange={handleChange}
-          placeholder="Enter item name"
-          size="small"
-          sx={{ mb: 3 }}
-          error={!!errors.itemName}
-          helperText={errors.itemName}
+        <ItemFormFields
+          formData={formData}
+          errors={errors}
+          handleChange={handleChange}
         />
-
-        <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 500 }}>
-          Description
-        </Typography>
-        <TextField
-          fullWidth
-          name="description"
-          value={formData.description}
-          onChange={handleChange}
-          placeholder="Enter item description"
-          multiline
-          rows={3}
-          size="small"
-          inputProps={{ maxLength: 500 }}
-        />
-        <Typography
-          variant="caption"
-          align="right"
-          display="block"
-          color="text.secondary"
-          sx={{ mb: 3 }}
-        >
-          {formData.description.length}/500
-        </Typography>
-
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 6 }}>
-            <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 500 }}>
-              Sale Rate*
-            </Typography>
-            <TextField
-              fullWidth
-              name="salesRate"
-              type="number"
-              value={formData.salesRate}
-              onChange={handleChange}
-              error={!!errors.salesRate}
-              helperText={errors.salesRate}
-              inputProps={{ style: { textAlign: "right" } }}
-              placeholder="0.00"
-              size="small"
-            />
-          </Grid>
-          <Grid size={{ xs: 6 }}>
-            <Typography variant="body2" sx={{ mb: 0.5, fontWeight: 500 }}>
-              Discount %
-            </Typography>
-            <TextField
-              fullWidth
-              name="discountPct"
-              type="number"
-              value={formData.discountPct}
-              onChange={handleChange}
-              error={!!errors.discountPct}
-              helperText={errors.discountPct}
-              size="small"
-              placeholder="0"
-              inputProps={{ style: { textAlign: "right" } }}
-              InputProps={{
-                endAdornment: <InputAdornment position="end">%</InputAdornment>,
-              }}
-            />
-          </Grid>
-        </Grid>
       </DialogContent>
 
       <DialogActions sx={{ p: 2 }}>
-        <Button
+        <AppButton
           onClick={handleSubmit}
           disabled={isSaving}
-          variant="contained"
-          sx={{
-            bgcolor: "#444",
-            "&:hover": { bgcolor: "#222" },
-            textTransform: "none",
-            px: 4,
-          }}
         >
           {isSaving ? <CircularProgress size={24} color="inherit" /> : "Save"}
-        </Button>
+        </AppButton>
+
         <Button
           onClick={handleClose}
           color="inherit"
-          sx={{ textTransform: "none" }}
+          sx={{
+            textTransform: "none",
+          }}
         >
           Cancel
         </Button>

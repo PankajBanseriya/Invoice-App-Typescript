@@ -1,35 +1,21 @@
 import { useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
-import {
-  Box,
-  Typography,
-  Card,
-  Button,
-  Stack,
-  OutlinedInput,
-  InputAdornment,
-  Grid,
-  Paper,
-  IconButton,
-} from "@mui/material";
-import { useGridApiRef, GridPreferencePanelsValue } from "@mui/x-data-grid";
-import type { GridColDef, GridRenderCellParams } from "@mui/x-data-grid-pro";
-
+import { Box, Typography, Stack, Grid, Card } from "@mui/material";
+import { useGridApiRef } from "@mui/x-data-grid";
 import { LineChart } from "@mui/x-charts/LineChart";
-import { format, subDays } from "date-fns";
-import { Search, Add, Edit, Delete, Print } from "@mui/icons-material";
-import { useInvoices, useInvoiceChart } from "../hooks/useInvoices";
-import { useNavigate } from "react-router-dom";
-import { FaColumns, FaDownload } from "react-icons/fa";
 import { PieChart } from "@mui/x-charts/PieChart";
-import { DataGrid } from "@mui/x-data-grid";
-import { printInvoice } from "../utils/printInvoice";
+import { format, subDays } from "date-fns";
+import { useNavigate } from "react-router-dom";
+import { useInvoices, useInvoiceChart } from "../hooks/useInvoices";
 import ConfirmDeleteModal from "../components/common/ConfirmDeleteModal";
 import DateRangeDialog from "../components/invoices/DateRangeDialog";
-import toast from "react-hot-toast";
+import AppSearchField from "../components/common/SearchInput";
+import InvoiceActions from "../components/invoices/InvoiceActions";
+import InvoiceFilterButtons from "../components/invoices/InvoiceFilterButtons";
+import InvoiceTable from "../components/invoices/InvoiceTable";
+import { getInvoiceColumns } from "../components/invoices/invoiceColumns";
 
-// --- Interfaces ---
-interface Invoice {
+export interface Invoice {
   primaryKeyID: number;
   invoiceID: number;
   invoiceNo: string;
@@ -47,10 +33,18 @@ interface CustomDates {
   to: string | null;
 }
 
+interface ChartData {
+  amountSum: number;
+  invoiceCount: number;
+  monthStart: string;
+}
+
 const Invoices = () => {
   const navigate = useNavigate();
+  const apiRef = useGridApiRef();
   const [search, setSearch] = useState<string>("");
   const [activeFilter, setActiveFilter] = useState<string>("Month");
+  const [dateDialogOpen, setDateDialogOpen] = useState<boolean>(false);
   const [customDates, setCustomDates] = useState<CustomDates>({
     from: null,
     to: null,
@@ -59,9 +53,6 @@ const Invoices = () => {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(
     null,
   );
-  const apiRef = useGridApiRef();
-
-  const [dateDialogOpen, setDateDialogOpen] = useState(false);
 
   const dateParams = useMemo(() => {
     const today = new Date();
@@ -88,6 +79,7 @@ const Invoices = () => {
       default:
         from = format(subDays(today, 30), "yyyy-MM-dd");
     }
+
     return { from, to };
   }, [activeFilter, customDates]);
 
@@ -102,17 +94,21 @@ const Invoices = () => {
 
   const { data } = useInvoiceChart();
 
-  const chartData = data.map((item: any) => {
+  const chartData = data.map((item: ChartData) => {
     const date = new Date(item.monthStart);
+
     return {
-      month: date.toLocaleString("default", { month: "short" }),
+      month: date.toLocaleString("default", {
+        month: "short",
+      }),
+
       amount: item.amountSum,
       invoices: item.invoiceCount,
     };
   });
 
   const pieData = useMemo(() => {
-    return topItems.map((item: any, index: number) => ({
+    return topItems.map((item, index: number) => ({
       id: index,
       value: item.amountSum,
       label: item.itemName,
@@ -132,137 +128,6 @@ const Invoices = () => {
     }
   };
 
-  const columns: GridColDef<Invoice>[] = [
-    {
-      field: "invoiceNo",
-      headerName: "Invoice No",
-      flex: 0.75,
-      minWidth: 100,
-      renderCell: (params: GridRenderCellParams) => (
-        <Typography
-          fontWeight="600"
-          color="primary"
-          sx={{
-            fontSize: 14,
-            cursor: "pointer",
-            "&:hover": { textDecoration: "underline" },
-          }}
-          onClick={() =>
-            navigate("/invoices/form", {
-              state: { activeInvoice: params.row },
-            })
-          }
-        >
-          {params.row.invoiceNo}
-        </Typography>
-      ),
-    },
-    {
-      field: "invoiceDate",
-      headerName: "Date",
-      flex: 0.75,
-      minWidth: 120,
-      valueFormatter: (value?: string) =>
-        value ? format(new Date(value), "dd-MMM-yyyy") : "",
-    },
-    { field: "customerName", headerName: "Customer", flex: 1, minWidth: 180 },
-    { field: "totalItems", headerName: "Items", type: "number", minWidth: 100 },
-    {
-      field: "subTotal",
-      headerName: "Sub Total",
-      width: 150,
-      minWidth: 150,
-      type: "number",
-      valueFormatter: (value?: number) =>
-        value ? `$${value.toLocaleString()}` : "$0",
-    },
-    {
-      field: "taxPercentage",
-      headerName: "Tax %",
-      minWidth: 150,
-      type: "number",
-      valueFormatter: (value?: number) => `${value}%`,
-    },
-    {
-      field: "taxAmount",
-      headerName: "Tax Amt",
-      minWidth: 150,
-      type: "number",
-      valueFormatter: (value?: number) => `$${value}`,
-    },
-    {
-      field: "invoiceAmount",
-      headerName: "Total",
-      minWidth: 150,
-      type: "number",
-      renderCell: (params: GridRenderCellParams) => (
-        <Typography
-          fontWeight="600"
-          sx={{ display: "flex", justifyContent: "end" }}
-        >
-          ${params.value?.toFixed(2)}
-        </Typography>
-      ),
-    },
-    {
-      field: "actions",
-      headerName: "Actions",
-      sortable: false,
-      hideable: false,
-      headerAlign: "right",
-      align: "right",
-      disableReorder: true,
-      flex: 1,
-      minWidth: 130,
-      headerClassName: "actions",
-      renderCell: (params: GridRenderCellParams) => (
-        <Stack
-          direction="row"
-          alignItems="center"
-          height="100%"
-          justifyContent="end"
-        >
-          <IconButton
-            size="small"
-            onClick={() =>
-              navigate("/invoices/form", {
-                state: { activeInvoice: params.row },
-              })
-            }
-          >
-            <Edit fontSize="small" />
-          </IconButton>
-          <IconButton
-            size="small"
-            onClick={async () => {
-              try {
-                await printInvoice(params.row.invoiceID);
-              } catch (e) {
-                toast.error("Failed to generate print view");
-              }
-            }}
-          >
-            <Print fontSize="small" />
-          </IconButton>
-          <IconButton
-            size="small"
-            onClick={() => handleDeleteClick(params.row.invoiceID)}
-          >
-            <Delete fontSize="small" />
-          </IconButton>
-        </Stack>
-      ),
-    },
-  ];
-
-  const filteredRows = invoices.filter((row: Invoice) => {
-    const searchTerm = search.toLowerCase();
-    return (
-      row.invoiceNo?.toLowerCase().includes(searchTerm) ||
-      row.customerName?.toLowerCase().includes(searchTerm)
-    );
-  });
-
   const handleInvoiceRange = (label: string) => {
     if (label === "Custom") {
       setDateDialogOpen(true);
@@ -276,8 +141,27 @@ const Invoices = () => {
     setActiveFilter("Custom");
   };
 
+  const columns = getInvoiceColumns({
+    navigate,
+    handleDeleteClick,
+  });
+
+  const filteredRows = invoices.filter((row: Invoice) => {
+    const searchTerm = search.toLowerCase();
+
+    return (
+      row.invoiceNo?.toLowerCase().includes(searchTerm) ||
+      row.customerName?.toLowerCase().includes(searchTerm)
+    );
+  });
+
   return (
-    <Box sx={{ width: "95%", mx: "auto" }}>
+    <Box
+      sx={{
+        width: "95%",
+        mx: "auto",
+      }}
+    >
       <Stack
         direction="row"
         justifyContent="space-between"
@@ -289,45 +173,28 @@ const Invoices = () => {
         <Typography variant="h5" component="h2" fontWeight="500">
           Invoices
         </Typography>
-        <Stack
-          direction="row"
-          flexWrap={"wrap"}
-          justifyContent={"center"}
-          gap={1}
-        >
-          {["Today", "Week", "Month", "Year", "Custom"].map((label) => {
-            const isActive = activeFilter === label;
-            return (
-              <Button
-                key={label}
-                variant="contained"
-                onClick={() => handleInvoiceRange(label)}
-                sx={{
-                  bgcolor: isActive ? "#1a1a1a" : "#f1f3f5",
-                  color: isActive ? "#ffffff" : "#495057",
-                  borderRadius: "50px",
-                  textTransform: "none",
-                  fontSize: "14px",
-                  px: 2,
-                  py: 0.5,
-                  fontWeight: isActive ? "500" : "400",
-                  boxShadow: "none",
-                  "&:hover": {
-                    bgcolor: isActive ? "#000000" : "#e9ecef",
-                    boxShadow: "none",
-                  },
-                }}
-              >
-                {label}
-              </Button>
-            );
-          })}
-        </Stack>
+
+        <InvoiceFilterButtons
+          activeFilter={activeFilter}
+          onChange={handleInvoiceRange}
+        />
       </Stack>
 
       <Grid container spacing={2} mb={2}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card variant="outlined" sx={{ p: 2, height: "150px" }}>
+        <Grid
+          size={{
+            xs: 12,
+            sm: 6,
+            md: 3,
+          }}
+        >
+          <Card
+            variant="outlined"
+            sx={{
+              p: 2,
+              height: "150px",
+            }}
+          >
             <Typography variant="h4" fontWeight="500">
               {isLoadingMetrics ? "..." : invoiceMetrics?.invoiceCount}
             </Typography>
@@ -337,20 +204,44 @@ const Invoices = () => {
             </Typography>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card variant="outlined" sx={{ p: 2, height: "150px" }}>
+
+        <Grid
+          size={{
+            xs: 12,
+            sm: 6,
+            md: 3,
+          }}
+        >
+          <Card
+            variant="outlined"
+            sx={{
+              p: 2,
+              height: "150px",
+            }}
+          >
             <Typography variant="h4" fontWeight="500">
               {isLoadingMetrics
                 ? "..."
-                : `$${invoiceMetrics?.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                : `$${invoiceMetrics?.totalAmount?.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                  })}`}
             </Typography>
+
             <Typography color="text.secondary">Total Invoice Amount</Typography>
+
             <Typography variant="caption" color="text.secondary">
               {activeFilter}
             </Typography>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+
+        <Grid
+          size={{
+            xs: 12,
+            sm: 6,
+            md: 3,
+          }}
+        >
           <Card
             variant="outlined"
             sx={{
@@ -363,6 +254,7 @@ const Invoices = () => {
             <Typography color="textSecondary" fontSize={13} mb={2}>
               Last 12 Months
             </Typography>
+
             <Card
               variant="outlined"
               sx={{
@@ -375,7 +267,7 @@ const Invoices = () => {
                 height={100}
                 series={[
                   {
-                    data: chartData.map((item: any) => item.amount),
+                    data: chartData.map((item) => item.amount),
                     label: "Revenue",
                     valueFormatter: (value: number | null) =>
                       `₹ ${value?.toFixed(2)}`,
@@ -384,13 +276,14 @@ const Invoices = () => {
                 xAxis={[
                   {
                     scaleType: "point",
-                    data: chartData.map((item: any) => item.month),
+                    data: chartData.map((item) => item.month),
                   },
                 ]}
               />
             </Card>
           </Card>
         </Grid>
+
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Card
             variant="outlined"
@@ -419,7 +312,12 @@ const Invoices = () => {
                 <PieChart
                   width={150}
                   height={150}
-                  margin={{ top: 30, bottom: 30, left: 0, right: 35 }}
+                  margin={{
+                    top: 30,
+                    bottom: 30,
+                    left: 0,
+                    right: 35,
+                  }}
                   series={[
                     {
                       data: pieData,
@@ -456,130 +354,21 @@ const Invoices = () => {
       <Stack
         direction="row"
         justifyContent="space-between"
-        flexWrap={"wrap"}
+        flexWrap="wrap"
         mb={2}
         gap={2}
       >
-        <OutlinedInput
-          size="small"
+        <AppSearchField
           placeholder="Search Invoice No, Customer..."
           value={search}
           onChange={(e: ChangeEvent<HTMLInputElement>) =>
             setSearch(e.target.value)
           }
-          sx={{ width: 350, bgcolor: "white" }}
-          startAdornment={
-            <InputAdornment position="start">
-              <Search />
-            </InputAdornment>
-          }
         />
-        <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
-          <Button
-            variant="outlined"
-            sx={{
-              mr: 1,
-              textTransform: "capitalize",
-              borderColor: "text.primary",
-              color: "text.primary",
-              py: 0.9,
-              mb: 1,
-            }}
-            size="medium"
-            onClick={() => navigate("/items")}
-          >
-            All Items
-          </Button>
-
-          <Button
-            variant="contained"
-            startIcon={<Add />}
-            sx={{
-              bgcolor: "black",
-              textTransform: "none",
-              "&:hover": { bgcolor: "#333" },
-              mr: 1,
-              py: 0.9,
-              mb: 1,
-            }}
-            onClick={() =>
-              navigate("/invoices/form", { state: { activeInvoice: null } })
-            }
-          >
-            New Invoice
-          </Button>
-
-          <Button
-            variant="outlined"
-            sx={{
-              mr: 1,
-              textTransform: "capitalize",
-              borderColor: "text.primary",
-              color: "text.primary",
-              py: 0.9,
-              mb: 1,
-            }}
-            size="medium"
-            onClick={() =>
-              apiRef.current?.exportDataAsCsv({
-                fileName: "invoices-data",
-                fields: [
-                  "invoiceNo",
-                  "invoiceDate",
-                  "customerName",
-                  "totalItems",
-                  "subTotal",
-                  "taxPercentage",
-                  "taxAmount",
-                  "invoiceAmount",
-                ],
-              })
-            }
-          >
-            <FaDownload style={{ marginRight: "10px" }} fontSize={16} />
-            Export
-          </Button>
-          <Button
-            variant="outlined"
-            sx={{
-              mr: 1,
-              textTransform: "capitalize",
-              borderColor: "text.primary",
-              color: "text.primary",
-              py: 1.2,
-              mb: 1,
-              minWidth: "50Px",
-            }}
-            size="medium"
-            onClick={() =>
-              apiRef.current?.showPreferences(GridPreferencePanelsValue.columns)
-            }
-          >
-            <FaColumns fontSize={20} />
-          </Button>
-        </Box>
+        <InvoiceActions apiRef={apiRef} />
       </Stack>
 
-      <Paper sx={{ height: 245 }}>
-        <DataGrid
-          apiRef={apiRef}
-          rows={filteredRows}
-          getRowId={(row: Invoice) => row.primaryKeyID}
-          columns={columns}
-          getRowHeight={() => "auto"}
-          hideFooter
-          sx={{
-            border: 0,
-            px: 2,
-            "& .MuiDataGrid-cell": {
-              p: 1.2,
-            },
-            "& .actions": {
-              paddingRight: "25px !important",
-            },
-          }}
-        />
-      </Paper>
+      <InvoiceTable apiRef={apiRef} rows={filteredRows} columns={columns} />
 
       <DateRangeDialog
         open={dateDialogOpen}
@@ -597,5 +386,4 @@ const Invoices = () => {
     </Box>
   );
 };
-
 export default Invoices;

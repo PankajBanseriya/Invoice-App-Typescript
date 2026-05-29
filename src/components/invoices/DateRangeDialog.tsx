@@ -11,6 +11,7 @@ import {
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+import AppButton from "../common/AppButton";
 
 interface Props {
   open: boolean;
@@ -63,15 +64,9 @@ const DateRangeDialog = ({ open, onClose, onApply }: Props) => {
           Cancel
         </Button>
 
-        <Button
-          variant="contained"
-          onClick={handleApply}
-          sx={{
-            bgcolor: "text.primary",
-          }}
-        >
+        <AppButton onClick={handleApply}>
           Apply
-        </Button>
+        </AppButton>
       </DialogActions>
     </Dialog>
   );
